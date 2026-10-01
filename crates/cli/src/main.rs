@@ -2,14 +2,17 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use bumpalo::Bump;
+use common::Ctx;
 use common::diagnostic::{ANSII_CLEAR, ANSII_COLOR_RED, ANSII_UNDERLINED, DisplayDiagnostic};
-use ide::IdeDiagnostics;
+use ide::{IdeDiagnostics, cargo};
+use toml::MapTable;
+use toml::parse::StringVal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Command {
     /// Validate arbitrary toml files.
     Validate,
-    /// Check a `Cargo.toml` manifest.
+    /// Check a `typst.toml` manifest.
     Check,
 }
 
@@ -50,9 +53,9 @@ fn main() -> ExitCode {
         input_error!("missing argument <file>");
     };
     if let Some(filename) = AsRef::<Path>::as_ref(&path).file_name() {
-        if command == Command::Check && filename != "Cargo.toml" {
+        if command == Command::Check && filename != "typst.toml" {
             input_error!(
-                "file isn't named `Cargo.toml`, use the `validate` command for arbitrary toml files"
+                "file isn't named `typst.toml`, use the `validate` command for arbitrary toml files"
             );
         }
     } else {
@@ -64,23 +67,16 @@ fn main() -> ExitCode {
         Err(e) => error!("error reading from file: {e}"),
     };
 
-    let start = std::time::SystemTime::now();
     let mut ctx = IdeDiagnostics::default();
     let bump = Bump::new();
     let tokens = toml::lex(&mut ctx, &bump, &path, &text);
-    let lexing = std::time::SystemTime::now();
     let ast = toml::parse(&mut ctx, &bump, tokens);
-    let parsing = std::time::SystemTime::now();
     let map = toml::map(&mut ctx, &bump, &ast);
-    let mapping = std::time::SystemTime::now();
     if command == Command::Check {
-        let _state = ide::check(&mut ctx, map);
+        check_typst_manifest(&mut ctx, map);
     }
-    let checking = std::time::SystemTime::now();
-    let simple = toml::util::map_simple(&ast, map);
-    let end = std::time::SystemTime::now();
+    let _simple = toml::util::map_simple(&ast, map);
 
-    println!("{simple:#?}");
     ctx.sort_diagnostics();
     for error in ctx.errors.iter() {
         println!("{}", error.display(&ast.source));
@@ -92,25 +88,44 @@ fn main() -> ExitCode {
         println!("{}", info.display(&ast.source));
     }
 
-    let us_lexing = lexing.duration_since(start).unwrap().as_micros();
-    let us_parsing = parsing.duration_since(lexing).unwrap().as_micros();
-    let us_mapping = mapping.duration_since(parsing).unwrap().as_micros();
-    let us_checking = checking.duration_since(mapping).unwrap().as_micros();
-    let us_simple = end.duration_since(checking).unwrap().as_micros();
-    let us_total = end.duration_since(start).unwrap().as_micros();
-
-    println!();
-    println!("lexing   {us_lexing:6}us");
-    println!("parsing  {us_parsing:6}us");
-    println!("mapping  {us_mapping:6}us");
-    if command == Command::Check {
-        println!("checking {us_checking:4}us");
-    }
-    println!("simple   {us_simple:6}us");
-    println!("-----------------");
-    println!("total    {us_total:6}us");
-
     ExitCode::SUCCESS
+}
+
+fn check_typst_manifest(ctx: &mut IdeDiagnostics, map: &MapTable) {
+    if let Some(package) = map.get("package").and_then(|e| e.node.as_table()) {
+        if let Some(entrypoint) = package.get("entrypoint").and_then(|e| e.node.as_str()) {
+            check_sanitized_path(ctx, "package.entrypoint", entrypoint);
+        }
+    }
+
+    if let Some(template) = map.get("template").and_then(|e| e.node.as_table()) {
+        if let Some(path) = template.get("path").and_then(|e| e.node.as_str()) {
+            check_sanitized_path(ctx, "template.path", path);
+        }
+        if let Some(entrypoint) = template.get("entrypoint").and_then(|e| e.node.as_str()) {
+            check_sanitized_path(ctx, "template.entrypoint", entrypoint);
+        }
+    }
+}
+
+fn check_sanitized_path(ctx: &mut IdeDiagnostics, toml_path: &str, path: &StringVal) {
+    if path.text.starts_with(['/', '\\']) {
+        ctx.error(cargo::Error::new(
+            Box::new([]),
+            toml_path.into(),
+            path.text_span(),
+            cargo::ErrorKind::Custom("is an absolute path".into()),
+        ));
+    }
+
+    if path.text.contains("..") {
+        ctx.error(cargo::Error::new(
+            Box::new([]),
+            toml_path.into(),
+            path.text_span(),
+            cargo::ErrorKind::Custom(" contains `..`".into()),
+        ));
+    }
 }
 
 fn help_message() {
@@ -118,5 +133,5 @@ fn help_message() {
     eprintln!();
     eprintln!("commands:");
     eprintln!("  {ANSII_UNDERLINED}validate{ANSII_CLEAR}  to validate arbitrary toml files");
-    eprintln!("  {ANSII_UNDERLINED}check{ANSII_CLEAR}     to check a `Cargo.toml` manifest");
+    eprintln!("  {ANSII_UNDERLINED}check{ANSII_CLEAR}     to check a `typst.toml` manifest");
 }

@@ -53,6 +53,7 @@ impl Error {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ErrorKind {
+    Custom(FmtStr),
     WrongDatatype {
         expected: Datatype,
         found: Datatype,
@@ -85,6 +86,7 @@ impl Diagnostic for Error {
         use ErrorKind::*;
         let Self { path, kind, .. } = self;
         match kind {
+            Custom(msg) => write!(f, "`{path}` {msg}"),
             WrongDatatype { expected, found } => write!(
                 f,
                 "expected `{path}` to be of type {expected}, found {found}"
@@ -133,6 +135,7 @@ impl Diagnostic for Error {
         use ErrorKind::*;
         let Self { kind, .. } = self;
         match kind {
+            Custom(msg) => f.write_str(msg),
             WrongDatatype { expected, .. } => write!(f, "expected {expected}"),
             UnsupportedUnderscore { new, .. } => write!(f, "unsupported; instead use `{new}`"),
             DepWrongDatatype(..) => write!(f, "expected string or table"),
