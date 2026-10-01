@@ -480,6 +480,57 @@ pub enum MapNode<'a, S = Complete> {
     Scalar(Scalar<'a>),
 }
 
+impl<'a> MapNode<'a> {
+    pub fn as_table(&self) -> Option<&MapTable<'a>> {
+        match self {
+            MapNode::Table(table) => Some(table.get()),
+            _ => None,
+        }
+    }
+
+    pub fn as_array(&self) -> Option<&MapArray<'a>> {
+        match self {
+            MapNode::Array(array) => Some(array),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&StringVal<'a>> {
+        match self {
+            MapNode::Scalar(Scalar::String(val)) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<&IntVal> {
+        match self {
+            MapNode::Scalar(Scalar::Int(val)) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn as_float(&self) -> Option<&FloatVal> {
+        match self {
+            MapNode::Scalar(Scalar::Float(val)) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<&BoolVal> {
+        match self {
+            MapNode::Scalar(Scalar::Bool(val)) => Some(val),
+            _ => None,
+        }
+    }
+
+    pub fn as_date_time(&self) -> Option<&DateTimeVal> {
+        match self {
+            MapNode::Scalar(Scalar::DateTime(val)) => Some(val),
+            _ => None,
+        }
+    }
+}
+
 // TODO: Add ParentEntry to scalars
 #[derive(Debug, PartialEq)]
 pub enum Scalar<'a> {
